@@ -1,4 +1,5 @@
 # ~*~ coding: utf-8 ~*~
+import re
 from urllib2 import HTTPError
 from redmine import Redmine
 from django import forms
@@ -21,7 +22,8 @@ class RedmineOptionsForm(forms.Form):
     round_robin = forms.BooleanField(
                             label="Round robin",
                             widget=forms.CheckboxInput(),
-                            help_text="Round robin for assigned_to field in Redmine. Example: 2,3,4")
+                            help_text="Round robin for assigned_to field in Redmine. Example: 2,3,4",
+                            required=False)
     round_robin_ids = forms.CharField(
                             label="Round robin users ids",
                             widget=forms.TextInput(attrs={'class': 'span9'}),
@@ -41,7 +43,7 @@ class RedmineOptionsForm(forms.Form):
 
 class AutogunPlugin(NotificationPlugin):
     author = 'Geoffrey Lehée'
-    version = '0.1.0'
+    version = '0.1.1'
     description = "Integrate Redmine issue tracking by linking a user account to a project."
     slug = 'autogun-redmine'
     title = _('Redmine Autogun')
@@ -58,7 +60,7 @@ class AutogunPlugin(NotificationPlugin):
             return
 
         message = """
-"Event Url":%s/%s/%s/group/%s/
+"Sentry event url":%s/%s/%s/group/%s/
 
 <pre>
 %s
@@ -68,61 +70,64 @@ class AutogunPlugin(NotificationPlugin):
         self.send_notification(event.project, message, event.error(), event.as_dict())
 
     def send_notification(self, project, message, error, info_dict):
-        if not error or error.split(':')[1].rstrip().lstrip().lower() not in \
-                [exception.lower() for exception in self.get_option('ignored_exceptions', project).split(',')]:
+        msg = info_dict['sentry.interfaces.Message']['message']
+        for exception in self.get_option('ignored_exceptions', project).split(','):
+            _r = re.compile(exception, re.IGNORECASE)
+            if _r.match(msg):
+                return
 
-            redmine = Redmine(
-                        self.get_option('host', project),
-                        username=self.get_option('username', project) or "",
-                        password=self.get_option('password', project) or "",
-                        key=self.get_option('key', project) or "",
-                        version=2.1)
+        redmine = Redmine(
+                    self.get_option('host', project),
+                    username=self.get_option('username', project) or "",
+                    password=self.get_option('password', project) or "",
+                    key=self.get_option('key', project) or "",
+                    version=2.1)
 
-            # Specific jurismarches
-            spider = [tag for tag in info_dict.get('tags') if tag[0] == 'spider'][0][1]
-            extra_fields =  [
-                                {'id': '1', 'value': spider},
-                                {'id': '2', 'value': '17'}
-            ]
+        # Specific jurismarches
+        spider = [tag for tag in info_dict.get('tags') if tag[0] == 'spider'][0][1]
+        extra_fields =  [
+                            {'id': '1', 'value': spider},
+                            {'id': '2', 'value': '17'}
+        ]
 
-            msg = info_dict['sentry.interfaces.Message']['message']
-            subject = (msg + '..') if len(msg) > 75 else msg
+        subject = (msg[:80] + '..') if len(msg) > 80 else msg
 
-            try:
-                redmine_project = redmine.projects[self.get_option('project', project)]
+        try:
+            redmine_project = redmine.projects[self.get_option('project', project)]
 
-                issue_data = {
-                    'subject': subject,
-                    'tracker_id': self.get_option('tracker', project),
-                    'description': message,
-                    'custom_fields': extra_fields
-                }
+            issue_data = {
+                'subject': subject,
+                'tracker_id': self.get_option('tracker', project),
+                'description': message,
+                'custom_fields': extra_fields
+            }
 
-                if self.get_option('round_robin', project):
-                    round_robin_ids = self.get_option('round_robin_ids', project).split(',')
+            if self.get_option('round_robin', project):
+                round_robin_ids = [int(idx) for idx in self.get_option('round_robin_ids', project).split(',')]
+                print(round_robin_ids)
 
-                    # Get next user using round Robin
-                    if round_robin_ids:
-                        round_robin = redmine_project.issues(status_id='*', sort='created_on:desc', limit='1', assigned_to_id='*')
-                        if round_robin:
-                            last_user = list(round_robin)[0].assigned_to
-                            if last_user:
-                                try:
-                                    next_user_index = round_robin_ids.index(last_user.id) + 1
-                                    if next_user_index >= len(round_robin_ids):
-                                        next_user_index = 0
-                                except:
+                # Get next user using round Robin
+                if round_robin_ids:
+                    round_robin = redmine_project.issues(status_id='*', sort='created_on:desc', limit='1', assigned_to_id='*')
+                    if round_robin:
+                        last_user = list(round_robin)[0].assigned_to
+                        if last_user:
+                            try:
+                                next_user_index = round_robin_ids.index(last_user.id) + 1
+                                if next_user_index >= len(round_robin_ids):
                                     next_user_index = 0
-                            else:
+                            except Exception:
                                 next_user_index = 0
+                        else:
+                            next_user_index = 0
 
-                            issue_data.update({
-                                'assigned_to': round_robin_ids[next_user_index]
-                            })
+                        issue_data.update({
+                            'assigned_to': round_robin_ids[next_user_index]
+                        })
 
-                redmine_project.issues.new(**issue_data)
-            except Exception as err:
-                raise err
+            redmine_project.issues.new(**issue_data)
+        except Exception as err:
+            raise err
 
 
 # Backwards-compatibility
