@@ -15,9 +15,12 @@ class RedmineOptionsForm(forms.Form):
     project = forms.CharField(label="Redmine project", help_text=_("example: scripts"), widget=forms.TextInput(attrs={'class': 'span9'}))
     tracker = forms.CharField(label="Redmine tracker ID", widget=forms.TextInput(attrs={'class': 'span9'}))
     ignored_exceptions = forms.CharField(
-                            label="Ignored exceptions separate by commat.",
+                            label="Ignored exceptions separate by commat as Python regexp.",
                             widget=forms.TextInput(attrs={'class': 'span9'}),
-                            help_text=_("Examples: IndexError,HttpError,attributError,ioERROR"),
+                            required=False)
+    same_issues = forms.CharField(
+                            label="Pattern which plugin will try to find before create new issue (as regexp, separate by commat).",
+                            widget=forms.TextInput(attrs={'class': 'span9'}),
                             required=False)
     round_robin = forms.BooleanField(
                             label="Round robin",
@@ -59,21 +62,26 @@ class AutogunPlugin(NotificationPlugin):
         if not is_new or not self.is_configured(event.project):
             return
 
+        event_url = "%s/%s/%s/group/%s/" % (
+                        settings.SENTRY_URL_PREFIX,
+                        event.team.slug,
+                        event.project.slug,
+                        event.group.id)
         message = """
-"Sentry event url":%s/%s/%s/group/%s/
+"Sentry event url":%s
 
 <pre>
 %s
 </pre>
-""" % (settings.SENTRY_URL_PREFIX, event.team.slug, event.project.slug, event.group.id, event.as_dict()['extra']['message'])
+""" % (event_url, event.as_dict()['extra']['message'])
 
-        self.send_notification(event.project, message, event.error(), event.as_dict())
+        self.send_notification(event.project, message, event.error(), event.as_dict(), event_url)
 
-    def send_notification(self, project, message, error, info_dict):
+    def send_notification(self, project, message, error, info_dict, event_url):
         msg = info_dict['sentry.interfaces.Message']['message']
         for exception in self.get_option('ignored_exceptions', project).split(','):
             _r = re.compile(exception, re.IGNORECASE)
-            if _r.match(msg):
+            if _r.search(msg):
                 return
 
         redmine = Redmine(
@@ -95,6 +103,17 @@ class AutogunPlugin(NotificationPlugin):
         try:
             redmine_project = redmine.projects[self.get_option('project', project)]
 
+            # Looking for related issues already open
+            already_open = False
+            for issue in redmine_project.issues(cf_1=spider, status_id="open"):
+                for pattern in self.get_option('same_issues', project).split(','):
+                    _r = re.compile(pattern, re.IGNORECASE)
+                    if _r.search(issue.subject):
+                        issue.save('"Related Sentry event":%s' % event_url)
+                        already_open = True
+            if already_open:
+                return
+
             issue_data = {
                 'subject': subject,
                 'tracker_id': self.get_option('tracker', project),
@@ -104,7 +123,6 @@ class AutogunPlugin(NotificationPlugin):
 
             if self.get_option('round_robin', project):
                 round_robin_ids = [int(idx) for idx in self.get_option('round_robin_ids', project).split(',')]
-                print(round_robin_ids)
 
                 # Get next user using round Robin
                 if round_robin_ids:
