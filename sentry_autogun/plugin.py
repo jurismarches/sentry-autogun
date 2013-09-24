@@ -1,36 +1,53 @@
 # ~*~ coding: utf-8 ~*~
 import re
-from urllib2 import HTTPError
 from redmine import Redmine
 from django import forms
 from django.utils.translation import ugettext_lazy as _
 from sentry.plugins.bases.notify import NotificationPlugin
 from django.conf import settings
 
+
 class RedmineOptionsForm(forms.Form):
-    host = forms.URLField(label="Redmine host", help_text=_("e.g. http://bugs.redmine.org"))
-    key = forms.CharField(label="Redmine user API Key", widget=forms.TextInput(attrs={'class': 'span9'}), required=False)
-    username = forms.CharField(label="Redmine username", widget=forms.TextInput(attrs={'class': 'span9'}), required=False)
-    password = forms.CharField(label="Redmine password", widget=forms.TextInput(attrs={'class': 'span9'}), required=False)
-    project = forms.CharField(label="Redmine project", help_text=_("example: scripts"), widget=forms.TextInput(attrs={'class': 'span9'}))
-    tracker = forms.CharField(label="Redmine tracker ID", widget=forms.TextInput(attrs={'class': 'span9'}))
+    host = forms.URLField(
+        label="Redmine host",
+        help_text=_("e.g. http://bugs.redmine.org"))
+    key = forms.CharField(
+        label="Redmine user API Key",
+        widget=forms.TextInput(attrs={'class': 'span9'}),
+        required=False)
+    username = forms.CharField(
+        label="Redmine username",
+        widget=forms.TextInput(attrs={'class': 'span9'}),
+        help_text=_("Use username/password only if you can't use API key or if you have an http auth."),
+        required=False)
+    password = forms.CharField(
+        label="Redmine password",
+        widget=forms.TextInput(attrs={'class': 'span9'}),
+        required=False)
+    project = forms.CharField(
+        label="Redmine project",
+        help_text=_("example: scripts"),
+        widget=forms.TextInput(attrs={'class': 'span9'}))
+    tracker = forms.CharField(
+        label="Redmine tracker ID",
+        widget=forms.TextInput(attrs={'class': 'span9'}))
     ignored_exceptions = forms.CharField(
-                            label="Ignored exceptions separate by commat as Python regexp.",
-                            widget=forms.TextInput(attrs={'class': 'span9'}),
-                            required=False)
+        label="Ignored exceptions separate by commat as Python regexp. Theses matched exceptions won't be created in Redmine.",
+        widget=forms.TextInput(attrs={'class': 'span9'}),
+        required=False)
     same_issues = forms.CharField(
-                            label="Pattern which plugin will try to find before create new issue (as regexp, separate by commat).",
-                            widget=forms.TextInput(attrs={'class': 'span9'}),
-                            required=False)
+        label="When matched on Redmine issues, plugin will just add a comment and not create a new issue.",
+        widget=forms.TextInput(attrs={'class': 'span9'}),
+        required=False)
     round_robin = forms.BooleanField(
-                            label="Round robin",
-                            widget=forms.CheckboxInput(),
-                            help_text="Round robin for assigned_to field in Redmine. Example: 2,3,4",
-                            required=False)
+        label="Round robin",
+        widget=forms.CheckboxInput(),
+        help_text="Round robin for assigned_to field in Redmine. Example: 2,3,4",
+        required=False)
     round_robin_ids = forms.CharField(
-                            label="Round robin users ids",
-                            widget=forms.TextInput(attrs={'class': 'span9'}),
-                            required=False)
+        label="Round robin users ids",
+        widget=forms.TextInput(attrs={'class': 'span9'}),
+        required=False)
 
     def clean(self):
         config = self.cleaned_data
@@ -44,9 +61,10 @@ class RedmineOptionsForm(forms.Form):
             raise forms.ValidationError('Need round robin users ids if round robin is activated')
         return config
 
+
 class AutogunPlugin(NotificationPlugin):
     author = 'Geoffrey Lehée'
-    version = '0.1.1'
+    version = '0.1.3'
     description = "Integrate Redmine issue tracking by linking a user account to a project."
     slug = 'autogun-redmine'
     title = _('Redmine Autogun')
@@ -55,18 +73,17 @@ class AutogunPlugin(NotificationPlugin):
     project_conf_form = RedmineOptionsForm
 
     def is_configured(self, project, **kwargs):
-        return all(self.get_option(k, project) for k in
-                    ('host', 'project', 'tracker'))
+        return all(self.get_option(k, project) for k in ('host', 'project', 'tracker'))
 
     def post_process(self, group, event, is_new, is_sample, **kwargs):
         if not is_new or not self.is_configured(event.project):
             return
 
         event_url = "%s/%s/%s/group/%s/" % (
-                        settings.SENTRY_URL_PREFIX,
-                        event.team.slug,
-                        event.project.slug,
-                        event.group.id)
+            settings.SENTRY_URL_PREFIX,
+            event.team.slug,
+            event.project.slug,
+            event.group.id)
         message = """
 "Sentry event url":%s
 
@@ -79,24 +96,35 @@ class AutogunPlugin(NotificationPlugin):
 
     def send_notification(self, project, message, error, info_dict, event_url):
         msg = info_dict['sentry.interfaces.Message']['message']
-        for exception in self.get_option('ignored_exceptions', project).split(','):
-            _r = re.compile(exception, re.IGNORECASE)
-            if _r.search(msg):
-                return
+
+        if self.get_option('ignored_exceptions', project).strip():
+            for exception in self.get_option('ignored_exceptions', project).split(','):
+                _r = re.compile(exception, re.IGNORECASE)
+                if _r.search(msg):
+                    return
 
         redmine = Redmine(
-                    self.get_option('host', project),
-                    username=self.get_option('username', project) or "",
-                    password=self.get_option('password', project) or "",
-                    key=self.get_option('key', project) or "",
-                    version=2.1)
+            self.get_option('host', project),
+            username=self.get_option('username', project) or "",
+            password=self.get_option('password', project) or "",
+            key=self.get_option('key', project) or "",
+            version=2.1)
 
         # Specific jurismarches
         spider = [tag for tag in info_dict.get('tags') if tag[0] == 'spider'][0][1]
-        extra_fields =  [
-                            {'id': '1', 'value': spider},
-                            {'id': '2', 'value': '17'}
+        argv = info_dict.get('extra', {}).get('sys.argv', [])
+        if argv:
+            for arg in argv:
+                if arg.startswith('id='):
+                    site_id = arg.split('=')[-1]
+                    break
+
+        extra_fields = [
+            {'id': '1', 'value': spider},
+            {'id': '2', 'value': '17'}
         ]
+        if site_id:
+            extra_fields.append({'id': '10', 'value': site_id})
 
         subject = (msg[:80] + '..') if len(msg) > 80 else msg
 
@@ -105,14 +133,21 @@ class AutogunPlugin(NotificationPlugin):
 
             # Looking for related issues already open
             already_open = False
-            for issue in redmine_project.issues(cf_1=spider, status_id="open"):
-                for pattern in self.get_option('same_issues', project).split(','):
-                    _r = re.compile(pattern, re.IGNORECASE)
-                    if _r.search(issue.subject):
-                        issue.save('"Related Sentry event":%s' % event_url)
-                        already_open = True
-            if already_open:
-                return
+            if self.get_option('same_issues', project).strip():
+                for issue in redmine_project.issues(cf_1=spider, status_id="open"):
+                    for pattern in self.get_option('same_issues', project).split(','):
+                        _r = re.compile(pattern, re.IGNORECASE)
+                        if _r.search(issue.subject):
+                            issue.save("Related event on this spider: %s" % event_url)
+                            already_open = True
+                        else:
+                            issue.save("""*New event on this spider*
+
+%s
+""" % message)
+                            already_open = True
+                        if already_open:
+                            return
 
             issue_data = {
                 'subject': subject,
