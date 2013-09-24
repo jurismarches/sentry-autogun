@@ -23,7 +23,7 @@ install_requires = [
 
 setup(
     name='sentry-autogun',
-    version='0.1.0',
+    version='0.1.3',
     author='Geoffrey Lehée',
     author_email='geoffrey@lehee.name',
     url='http://github.com/socketubs/sentry-autogun',
@@ -38,13 +38,8 @@ setup(
     test_suite='runtests.runtests',
     include_package_data=True,
     entry_points={
-       'sentry.apps': [
-            'redmine = sentry_autogun',
-        ],
-       'sentry.plugins': [
-            'redmine = sentry_autogun.plugin:AutogunPlugin'
-        ],
-    },
+        'sentry.apps': ['redmine = sentry_autogun'],
+        'sentry.plugins': ['redmine = sentry_autogun.plugin:AutogunPlugin']},
     classifiers=[
         'Framework :: Django',
         'Intended Audience :: Developers',
