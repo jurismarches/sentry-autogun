@@ -1,20 +1,21 @@
 #!/usr/bin/env python
 # ~*~ coding: utf-8 ~*~
-"""
-sentry-autogun
-==============
+import re
 
-An extension for Sentry which integrates with Redmine. Specifically, it allows you to ...
-
-:copyright: (c) 2013 by the Sentry Team, see AUTHORS for more details.
-:license: BSD, see LICENSE for more details.
-"""
-from setuptools import setup, find_packages
+from setuptools import setup
+from setuptools import find_packages
 
 
-tests_require = [
-    'nose',
-]
+def get_version():
+    VERSIONFILE = 'sentry_autogun/__init__.py'
+    initfile_lines = open(VERSIONFILE, 'rt').readlines()
+    VSRE = r"^__version__ = ['\"]([^'\"]*)['\"]"
+    for line in initfile_lines:
+        mo = re.search(VSRE, line, re.M)
+        if mo:
+            return mo.group(1)
+    raise RuntimeError('Unable to find version string in %s.' % (VERSIONFILE,))
+
 
 install_requires = [
     'sentry>=4.9.8',
@@ -23,19 +24,15 @@ install_requires = [
 
 setup(
     name='sentry-autogun',
-    version='0.1.3',
+    version=get_version(),
     author='Geoffrey Lehée',
-    author_email='geoffrey@lehee.name',
-    url='http://github.com/socketubs/sentry-autogun',
+    author_email='hello@socketubs.org',
+    url='https://github.com/socketubs/sentry-autogun',
     description='A Sentry extension which integrates with Redmine.',
-    long_description=__doc__,
-    license='BSD',
+    license='MIT',
     packages=find_packages(exclude=['tests']),
     zip_safe=False,
     install_requires=install_requires,
-    tests_require=tests_require,
-    extras_require={'test': tests_require},
-    test_suite='runtests.runtests',
     include_package_data=True,
     entry_points={
         'sentry.apps': ['redmine = sentry_autogun'],
