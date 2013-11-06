@@ -1,10 +1,12 @@
 # ~*~ coding: utf-8 ~*~
 import re
-from redmine import Redmine
+
 from django import forms
-from django.utils.translation import ugettext_lazy as _
-from sentry.plugins.bases.notify import NotificationPlugin
 from django.conf import settings
+from django.utils.translation import ugettext_lazy as _
+
+from redmine import Redmine
+from sentry.plugins.bases.notify import NotificationPlugin
 
 
 class RedmineOptionsForm(forms.Form):
@@ -110,7 +112,9 @@ class AutogunPlugin(NotificationPlugin):
             key=self.get_option('key', project) or "",
             version=2.1)
 
+        ################################################################################
         # Specific jurismarches
+        ################################################################################
         spider = [tag for tag in info_dict.get('tags') if tag[0] == 'spider'][0][1]
         argv = info_dict.get('extra', {}).get('sys.argv', [])
         if argv:
@@ -125,6 +129,7 @@ class AutogunPlugin(NotificationPlugin):
         ]
         if site_id:
             extra_fields.append({'id': '10', 'value': site_id})
+        ################################################################################
 
         subject = (msg[:80] + '..') if len(msg) > 80 else msg
 
@@ -138,10 +143,10 @@ class AutogunPlugin(NotificationPlugin):
                     for pattern in self.get_option('same_issues', project).split(','):
                         _r = re.compile(pattern, re.IGNORECASE)
                         if _r.search(issue.subject):
-                            issue.save("Related event on this spider: %s" % event_url)
+                            issue.save("Related event: %s" % event_url)
                             already_open = True
                         else:
-                            issue.save("""*New event on this spider*
+                            issue.save("""*New event*
 
 %s
 """ % message)
@@ -153,7 +158,7 @@ class AutogunPlugin(NotificationPlugin):
                 'subject': subject,
                 'tracker_id': self.get_option('tracker', project),
                 'description': message,
-                'custom_fields': extra_fields
+                'custom_fields': extra_fields  # Specific jurismarches custom_fields
             }
 
             if self.get_option('round_robin', project):
