@@ -115,7 +115,7 @@ class AutogunPlugin(NotificationPlugin):
         ################################################################################
         # Specific jurismarches
         ################################################################################
-        spider = [tag for tag in info_dict.get('tags') if tag[0] == 'spider'][0][1]
+        spider = dict(info_dict.get('tags', [])).get('spider')
         argv = info_dict.get('extra', {}).get('sys.argv', [])
         if argv:
             for arg in argv:
@@ -124,9 +124,12 @@ class AutogunPlugin(NotificationPlugin):
                     break
 
         extra_fields = [
-            {'id': '1', 'value': spider},
             {'id': '2', 'value': '17'}
         ]
+
+        if spider:
+            extra_fields.append({'id': '1', 'value': spider})
+
         if site_id:
             extra_fields.append({'id': '10', 'value': site_id})
         ################################################################################
