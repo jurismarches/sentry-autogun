@@ -86,7 +86,7 @@ class AutogunPlugin(NotificationPlugin):
             event.team.slug,
             event.project.slug,
             event.group.id)
-        content = event.as_dict()['extra']['message']
+        content = event.as_dict()['extra'].get('message', 'No message content.')
         message = '"Sentry event url":%s\n\n<pre>\n%s\n</pre>\n' % (event_url, content)
 
         self.send_notification(event.project, message, event.error(), event.as_dict(), event_url)
