@@ -66,7 +66,7 @@ class RedmineOptionsForm(forms.Form):
 
 class AutogunPlugin(NotificationPlugin):
     author = 'Geoffrey Lehée'
-    version = '0.1.3'
+    version = '0.1.5'
     description = "Integrate Redmine issue tracking by linking a user account to a project."
     slug = 'autogun-redmine'
     title = _('Redmine Autogun')
@@ -86,13 +86,8 @@ class AutogunPlugin(NotificationPlugin):
             event.team.slug,
             event.project.slug,
             event.group.id)
-        message = """
-"Sentry event url":%s
-
-<pre>
-%s
-</pre>
-""" % (event_url, event.as_dict()['extra']['message'])
+        content = event.as_dict()['extra']['message']
+        message = '"Sentry event url":%s\n\n<pre>\n%s\n</pre>\n' % (event_url, content)
 
         self.send_notification(event.project, message, event.error(), event.as_dict(), event_url)
 
@@ -116,6 +111,7 @@ class AutogunPlugin(NotificationPlugin):
         # Specific jurismarches
         ################################################################################
         spider = dict(info_dict.get('tags', [])).get('spider')
+        site_id = None
         argv = info_dict.get('extra', {}).get('sys.argv', [])
         if argv:
             for arg in argv:
@@ -146,13 +142,10 @@ class AutogunPlugin(NotificationPlugin):
                     for pattern in self.get_option('same_issues', project).split(','):
                         _r = re.compile(pattern, re.IGNORECASE)
                         if _r.search(issue.subject):
-                            issue.save("Related event: %s" % event_url)
+                            issue.save('Related event: %s' % event_url)
                             already_open = True
                         else:
-                            issue.save("""*New event*
-
-%s
-""" % message)
+                            issue.save('*New event*\n\n%s' % message)
                             already_open = True
                         if already_open:
                             return
